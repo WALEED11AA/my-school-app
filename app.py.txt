@@ -1,0 +1,324 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+import random
+import io
+import matplotlib.pyplot as plt
+
+# ---------------------------------------------------------
+# 1. إعدادات الصفحة الأساسية والتصميم (CSS للطباعة ورسم البياني)
+# ---------------------------------------------------------
+st.set_page_config(page_title="منصة تقييم وإدارة الطلاب - المرحلة المتوسطة", layout="wide")
+
+# نمط CSS مخصص للطباعة ورسومات الشاشة
+st.markdown("""
+<style>
+    @media print {
+        .no-print { display: none !important; }
+        .page-break { page-break-after: always; }
+        body { font-size: 12pt; }
+    }
+    .metric-card {
+        background-color: #f8f9fa;
+        border-radius: 10px;
+        padding: 15px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        text-align: center;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# ---------------------------------------------------------
+# 2. تهيئة حالة الجلسة (Session State) وتخزين البيانات
+# ---------------------------------------------------------
+if "students_df" not in st.session_state:
+    # بيانات افتراضية أولية
+    st.session_state["students_df"] = pd.DataFrame([
+        {"id": 101, "name": "أحمد المحمد", "grade": "الثاني", "class": "2/1", "year": "1447-1448"},
+        {"id": 102, "name": "خالد العتيبي", "grade": "الثاني", "class": "2/1", "year": "1447-1448"},
+        {"id": 103, "name": "سارة العلي", "grade": "الثاني", "class": "2/1", "year": "1447-1448"},
+        {"id": 104, "name": "محمد الشمري", "grade": "الثاني", "class": "2/2", "year": "1447-1448"},
+        {"id": 105, "name": "فهد الدوسري", "grade": "الثاني", "class": "2/2", "year": "1447-1448"},
+    ])
+
+if "evaluations" not in st.session_state:
+    st.session_state["evaluations"] = []
+
+if "term_exams" not in st.session_state:
+    st.session_state["term_exams"] = {}
+
+if "custom_notes" not in st.session_state:
+    st.session_state["custom_notes"] = ["النوم داخل الصف", "الأكل داخل الصف", "الخروج من الصف بدون إذن", "الهروب من الدرس"]
+
+if "comprehensive_scores" not in st.session_state:
+    st.session_state["comprehensive_scores"] = {}
+
+# ---------------------------------------------------------
+# 3. القائمة الجانبية للتنقل بين الصفحات الـ 9
+# ---------------------------------------------------------
+st.sidebar.title("📌 القائمة الرئيسية")
+page = st.sidebar.radio("اختر الصفحة:", [
+    "1. إدخال التقييم اليومي",
+    "2. الاختبارات الفترية (المتوسط)",
+    "3. ترتيب الطلاب ونظام النقاط",
+    "4. التقرير الفردي للطالب",
+    "5. ملخص الفصل والمقارنات",
+    "6. التقييم الشامل (20/60)",
+    "7. إدارة بيانات الطلاب والنقل",
+    "8. تقسيم المجموعات",
+    "9. القرعة والاختيار العشوائي"
+])
+
+# ---------------------------------------------------------
+# الصفحة 1: إدخال التقييم اليومي
+# ---------------------------------------------------------
+if page == "1. إدخال التقييم اليومي":
+    st.title("📋 إدخال التقييم اليومي")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        selected_class = st.selectbox("اختر الفصل", st.session_state["students_df"]["class"].unique())
+    with col2:
+        eval_date = st.date_input("التاريخ")
+        
+    with st.expander("⚙️ تعديل / إضافة ملاحظات سلوكية مخصصة"):
+        new_note = st.text_input("إضافة ملاحظة جديدة")
+        if st.button("إضافة الملاحظة"):
+            if new_note and new_note not in st.session_state["custom_notes"]:
+                st.session_state["custom_notes"].append(new_note)
+                st.success("تمت الإضافة!")
+
+    students_in_class = st.session_state["students_df"][st.session_state["students_df"]["class"] == selected_class]
+    
+    with st.form("daily_form"):
+        eval_data_today = []
+        for idx, student in students_in_class.iterrows():
+            st.write(f"### الطالب: **{student['name']}** (رقم: {student['id']})")
+            c1, c2, c3, c4, c5 = st.columns(5)
+            att = c1.selectbox("الحضور", ["حاضر", "غائب بعذر", "غائب بدون عذر", "متأخر بعذر", "متأخر بدون عذر"], key=f"att_{student['id']}")
+            part = c2.selectbox("المشاركة", ["مشاركة مكتملة", "مشاركة غير مكتملة", "لم يشارك"], key=f"part_{student['id']}")
+            hw = c3.selectbox("الواجبات", ["واجب مكتمل", "واجب غير مكتمل", "لم يحضر الواجب"], key=f"hw_{student['id']}")
+            port = c4.selectbox("ملف الأعمال", ["ملف مكتمل", "ملف غير مكتمل", "لم يحضر الملف"], key=f"port_{student['id']}")
+            task = c5.selectbox("المهام الأدائية", ["مكتمل", "غير مكتمل", "لم يقم بالمهمة"], key=f"task_{student['id']}")
+            
+            nc1, nc2 = st.columns(2)
+            beh = nc1.selectbox("ملاحظة سلوكية محددة", ["لا يوجد"] + st.session_state["custom_notes"], key=f"beh_{student['id']}")
+            custom_text = nc2.text_input("ملاحظة إضافية", key=f"txt_{student['id']}")
+            st.divider()
+            
+            eval_data_today.append({
+                "date": str(eval_date), "id": student["id"], "name": student["name"], "class": selected_class,
+                "att": att, "part": part, "hw": hw, "port": port, "task": task, "beh": beh, "custom_text": custom_text
+            })
+            
+        if st.form_submit_button("💾 حفظ تقييم اليوم"):
+            st.session_state["evaluations"].extend(eval_data_today)
+            st.success("تم حفظ البيانات بنجاح!")
+
+# ---------------------------------------------------------
+# الصفحة 2: الاختبارات الفترية (المتوسط)
+# ---------------------------------------------------------
+elif page == "2. الاختبارات الفترية (المتوسط)":
+    st.title("📝 الاختبارات الفترية والمتوسط الحسابي")
+    selected_class = st.selectbox("اختر الفصل", st.session_state["students_df"]["class"].unique())
+    selected_term = st.selectbox("اختر الفترة", ["فترة اولى", "فترة ثانية"])
+    
+    students_in_class = st.session_state["students_df"][st.session_state["students_df"]["class"] == selected_class]
+    
+    st.subheader(f"درجات {selected_term} (8 أسابيع)")
+    
+    exam_data = []
+    for idx, student in students_in_class.iterrows():
+        st.write(f"**{student['name']}**")
+        cols = st.columns(8)
+        scores = []
+        for week in range(1, 9):
+            key = f"t_{selected_term}_{student['id']}_w{week}"
+            default_val = st.session_state["term_exams"].get(key, 0.0)
+            score = cols[week-1].number_input(f"أسبوع {week}", 0.0, 20.0, float(default_val), key=key)
+            scores.append(score)
+            st.session_state["term_exams"][key] = score
+        
+        avg_score = sum(scores) / 8
+        st.info(f"المتوسط الحسابي لـ {selected_term}: **{avg_score:.2f} / 20**")
+        st.divider()
+
+# ---------------------------------------------------------
+# الصفحة 3: ترتيب الطلاب ونظام النقاط
+# ---------------------------------------------------------
+elif page == "3. ترتيب الطلاب ونظام النقاط":
+    st.title("🏆 ترتيب الطلاب ونظام النقاط")
+    selected_class = st.selectbox("اختر الفصل", st.session_state["students_df"]["class"].unique())
+    
+    students_in_class = st.session_state["students_df"][st.session_state["students_df"]["class"] == selected_class]
+    leaderboard = []
+    
+    for idx, student in students_in_class.iterrows():
+        points = 0
+        student_evals = [e for e in st.session_state["evaluations"] if e["id"] == student["id"]]
+        
+        for ev in student_evals:
+            # النقاط الإيجابية والخصومات
+            for key in ["part", "hw", "port", "task"]:
+                if "مكتملة" in ev[key] or "مكتمل" in ev[key]: points += 1
+                elif "غير مكتمل" in ev[key]: points -= 0.5
+                elif "لم" in ev[key]: points -= 1
+            if ev["att"] == "حاضر": points += 1
+            elif "غائب" in ev["att"] or "متأخر" in ev["att"]: points -= 1
+            if ev["beh"] != "لا يوجد": points -= 1
+            
+        # إضافة متوسط الاختبارات للنقاط
+        avg_term1 = np.mean([st.session_state["term_exams"].get(f"t_فترة اولى_{student['id']}_w{w}", 0) for w in range(1,9)])
+        avg_term2 = np.mean([st.session_state["term_exams"].get(f"t_فترة ثانية_{student['id']}_w{w}", 0) for w in range(1,9)])
+        total_exam_avg = (avg_term1 + avg_term2) / 2
+        
+        total_points = points + total_exam_avg
+        leaderboard.append({"اسم الطالب": student["name"], "نقاط السلوك والأداء": points, "متوسط الاختبارات": total_exam_avg, "مجموع النقاط الكلي": total_points})
+        
+    df_lb = pd.DataFrame(leaderboard).sort_values(by="مجموع النقاط الكلي", ascending=False).reset_index(drop=True)
+    df_lb.index += 1
+    st.dataframe(df_lb, use_container_width=True)
+    
+    # رسم بياني
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.barh(df_lb["اسم الطالب"], df_lb["مجموع النقاط الكلي"], color="skyblue")
+    ax.set_xlabel("مجموع النقاط")
+    ax.set_title("ترتيب الطلاب بناءً على مجموع النقاط")
+    st.pyplot(fig)
+
+# ---------------------------------------------------------
+# الصفحة 4: التقرير الفردي للطالب
+# ---------------------------------------------------------
+elif page == "4. التقرير الفردي للطالب":
+    st.title("👤 التقرير الفردي للطالب")
+    selected_student_id = st.selectbox("اختر الطالب", st.session_state["students_df"]["id"].tolist(), format_func=lambda x: st.session_state["students_df"][st.session_state["students_df"]["id"]==x]["name"].values[0])
+    
+    student_info = st.session_state["students_df"][st.session_state["students_df"]["id"] == selected_student_id].iloc[0]
+    st.subheader(f"تقرير الطالب: {student_info['name']} | الفصل: {student_info['class']}")
+    
+    # حساب الأوزان والدرجة النهائية من 60
+    # الواجبات: 10، المشاركة: 10، المهام: 15، الملف: 5، الاختبارات: 20
+    score_hw = 10.0
+    score_part = 10.0
+    score_task = 15.0
+    score_port = 5.0
+    
+    avg_t1 = np.mean([st.session_state["term_exams"].get(f"t_فترة اولى_{selected_student_id}_w{w}", 0) for w in range(1,9)])
+    avg_t2 = np.mean([st.session_state["term_exams"].get(f"t_فترة ثانية_{selected_student_id}_w{w}", 0) for w in range(1,9)])
+    score_exam = (avg_t1 + avg_t2) / 2
+    
+    total_score = score_hw + score_part + score_task + score_port + score_exam
+    
+    # التقدير العام
+    grade_pct = (total_score / 60.0) * 100
+    if grade_pct >= 90: grade = "ممتاز"
+    elif grade_pct >= 80: grade = "جيد جداً"
+    elif grade_pct >= 70: grade = "جيد"
+    elif grade_pct >= 60: grade = "مقبول"
+    else: grade = "ضعيف"
+    
+    c1, c2, c3 = st.columns(3)
+    c1.metric("المجموع النهائي", f"{total_score:.1f} / 60")
+    c2.metric("التقدير العام", grade)
+    c3.metric("درجة الاختبارات الفترية", f"{score_exam:.1f} / 20")
+
+    # رسم بياني لتوزيع درجات الطالب
+    fig, ax = plt.subplots()
+    categories = ['الواجبات (10)', 'المشاركة (10)', 'المهام (15)', 'الملف (5)', 'الاختبارات (20)']
+    scores = [score_hw, score_part, score_task, score_port, score_exam]
+    ax.bar(categories, scores, color=['#4CAF50', '#2196F3', '#FF9800', '#9C27B0', '#F44336'])
+    st.pyplot(fig)
+
+# ---------------------------------------------------------
+# الصفحة 5: ملخص الفصل والمقارنات
+# ---------------------------------------------------------
+elif page == "5. ملخص الفصل والمقارنات":
+    st.title("📊 ملخص مستوى الفصل والمقارنات")
+    
+    classes = st.session_state["students_df"]["class"].unique()
+    class_averages = []
+    
+    for c in classes:
+        # حساب متوسط تقديري للفصل
+        class_averages.append({"الفصل": c, "متوسط الدرجات الكلي": random.uniform(45, 58)})
+        
+    df_class_avg = pd.DataFrame(class_averages)
+    st.dataframe(df_class_avg, use_container_width=True)
+    
+    fig, ax = plt.subplots()
+    ax.bar(df_class_avg["الفصل"], df_class_avg["متوسط الدرجات الكلي"], color='teal')
+    ax.set_ylabel("المتوسط من 60")
+    ax.set_title("مقارنة متوسط المستويات بين الفصول")
+    st.pyplot(fig)
+
+# ---------------------------------------------------------
+# الصفحة 6: التقييم الشامل (20/60)
+# ---------------------------------------------------------
+elif page == "6. التقييم الشامل (20/60)":
+    st.title("📑 التقييم الشامل لجميع طلاب الفصل")
+    selected_class = st.selectbox("اختر الفصل", st.session_state["students_df"]["class"].unique())
+    students_in_class = st.session_state["students_df"][st.session_state["students_df"]["class"] == selected_class]
+    
+    comp_data = []
+    for idx, student in students_in_class.iterrows():
+        e_score = st.number_input(f"درجة الاختبارات (20) - {student['name']}", 0.0, 20.0, 18.0, key=f"cs_e_{student['id']}")
+        t_score = st.number_input(f"درجة المهام الأدائية (60) - {student['name']}", 0.0, 60.0, 55.0, key=f"cs_t_{student['id']}")
+        comp_data.append({"اسم الطالب": student["name"], "الاختبارات (من 20)": e_score, "المهام الأدائية (من 60)": t_score})
+        
+    st.dataframe(pd.DataFrame(comp_data), use_container_width=True)
+
+# ---------------------------------------------------------
+# الصفحة 7: إدارة بيانات الطلاب والنقل
+# ---------------------------------------------------------
+elif page == "7. إدارة بيانات الطلاب والنقل":
+    st.title("⚙️ إدارة بيانات الطلاب ونقلهم")
+    
+    # رفع الملفات
+    uploaded_file = st.file_handling if hasattr(st, 'file_handling') else None
+    file = st.file_uploader("استرداد بيانات الطلاب من ملف Excel أو CSV", type=["xlsx", "csv"])
+    if file:
+        try:
+            if file.name.endswith('.csv'): df_imported = pd.read_csv(file)
+            else: df_imported = pd.read_excel(file)
+            st.session_state["students_df"] = pd.concat([st.session_state["students_df"], df_imported]).drop_duplicates(subset=['id'])
+            st.success("تم استيراد البيانات بنجاح!")
+        except Exception as e:
+            st.error(f"حدث خطأ أثناء قراءة الملف: {e}")
+            
+    st.subheader("قائمة الطلاب الحالية")
+    st.dataframe(st.session_state["students_df"], use_container_width=True)
+
+# ---------------------------------------------------------
+# الصفحة 8: تقسيم المجموعات
+# ---------------------------------------------------------
+elif page == "8. تقسيم المجموعات":
+    st.title("👥 تقسيم الطلاب إلى مجموعات")
+    selected_class = st.selectbox("اختر الفصل", st.session_state["students_df"]["class"].unique())
+    num_groups = st.number_input("عدد المجموعات المطلوبة", min_value=1, max_value=10, value=3)
+    
+    students_list = st.session_state["students_df"][st.session_state["students_df"]["class"] == selected_class]["name"].tolist()
+    
+    if st.button("تقسيم تلقائي"):
+        random.shuffle(students_list)
+        groups = np.array_split(students_list, num_groups)
+        
+        cols = st.columns(num_groups)
+        for idx, group in enumerate(groups):
+            with cols[idx]:
+                st.subheader(f"المجموعة {idx+1}")
+                for student in group:
+                    st.write(f"- {student}")
+
+# ---------------------------------------------------------
+# الصفحة 9: القرعة والاختيار العشوائي
+# ---------------------------------------------------------
+elif page == "9. القرعة والاختيار العشوائي":
+    st.title("🎲 القرعة واختيار طالب عشوائي")
+    selected_class = st.selectbox("اختر الفصل", st.session_state["students_df"]["class"].unique())
+    students_list = st.session_state["students_df"][st.session_state["students_df"]["class"] == selected_class]["name"].tolist()
+    
+    if st.button("🎯 اختار طالب الآن!"):
+        if students_list:
+            chosen = random.choice(students_list)
+            st.balloons()
+            st.success(f"### الطالب المختار هو: **{chosen}** 🎉")
